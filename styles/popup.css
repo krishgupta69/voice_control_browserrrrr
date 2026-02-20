@@ -1,0 +1,103 @@
+/* ===== VoiceControl Popup ===== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    width: 280px;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 20px 16px;
+}
+
+/* Header */
+.header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 24px;
+}
+
+.logo-icon {
+    font-size: 22px;
+}
+
+.title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+}
+
+/* Mic Button */
+.main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+}
+
+.mic-btn {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 3px solid #3b3b5c;
+    background: #16213e;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.mic-btn:hover {
+    border-color: #3b82f6;
+    background: #1a2744;
+}
+
+.mic-btn.active {
+    border-color: #ef4444;
+    background: #2a1a1a;
+    animation: pulse 1.8s infinite;
+}
+
+.mic-icon {
+    font-size: 28px;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+    }
+
+    50% {
+        box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
+    }
+}
+
+.status-text {
+    font-size: 13px;
+    color: #a0a0b8;
+}
+
+.status-text strong {
+    color: #fff;
+}
+
+/* Footer */
+.footer {
+    margin-top: 20px;
+    font-size: 11px;
+    color: #6b6b8a;
+}

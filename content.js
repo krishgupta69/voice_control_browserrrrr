@@ -12,8 +12,6 @@ let linkBadges = [];       // Array of { badge: HTMLElement, link: HTMLElement }
 let linkBadgeTimeout = null;
 
 function initRecognition() {
-    if (recognition) return;
-
     // Check for browser support
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -21,34 +19,52 @@ function initRecognition() {
         return;
     }
 
+    // Destroy old instance — detach handlers FIRST to prevent cascade
+    if (recognition) {
+        recognition.onstart = null;
+        recognition.onresult = null;
+        recognition.onerror = null;
+        recognition.onend = null;
+        try { recognition.abort(); } catch (e) {}
+        recognition = null;
+    }
+
     recognition = new SpeechRecognition();
     recognition.continuous = true;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.lang = "en-US";
 
     recognition.onstart = () => {
+        console.log("VoiceControl: Recognition session started.");
         setupHUD();
         updateHUD("🎙️", "Listening...", "status-listening");
     };
 
     recognition.onresult = (event) => {
-        // Extract the latest final transcript
-        const lastResultIndex = event.results.length - 1;
-        const finalTranscript = event.results[lastResultIndex][0].transcript.trim();
-        console.log("VoiceControl Heard:", finalTranscript);
-        parseCommand(finalTranscript);
+        try {
+            const lastResultIndex = event.results.length - 1;
+            if (!event.results[lastResultIndex].isFinal) return;
+            const finalTranscript = event.results[lastResultIndex][0].transcript.trim();
+            if (!finalTranscript) return;
+            console.log("VoiceControl Heard:", finalTranscript);
+            parseCommand(finalTranscript);
+        } catch (err) {
+            console.error("VoiceControl: Error processing speech result:", err);
+            updateHUD("❌", "Error processing command", "status-error");
+        }
     };
 
     recognition.onerror = (event) => {
-        if (event.error === 'no-speech') {
-            console.warn("VoiceControl Error: No speech detected.");
-            updateHUD("🎙️", "Listening...", "status-listening");
+        if (event.error === 'no-speech' || event.error === 'aborted') {
+            // Harmless — just log it
+            console.warn("VoiceControl:", event.error);
         } else if (event.error === 'network') {
             console.warn("VoiceControl Error: Network issues.");
             updateHUD("❌", "Network error", "status-error");
         } else if (event.error === 'not-allowed') {
             console.warn("VoiceControl Error: Microphone access not allowed.");
             updateHUD("❌", "Mic access denied", "status-error");
+            isListening = false;
         } else {
             console.warn("VoiceControl Error:", event.error);
             updateHUD("❌", "Error: " + event.error, "status-error");
@@ -56,13 +72,22 @@ function initRecognition() {
     };
 
     recognition.onend = () => {
-        // If we're supposed to be listening and it ends (e.g., due to silence), optionally restart.
-        // For now, we'll just update state.
+        console.log("VoiceControl: Recognition session ended.");
         if (isListening) {
-            // In a robust implementation, we might try to recognition.start() again here
-            // to keep it truly continuous despite browser timeouts.
-            console.log("VoiceControl: Recognition ended.");
-            isListening = false;
+            setTimeout(() => {
+                if (isListening) {
+                    console.log("VoiceControl: Restarting recognition...");
+                    initRecognition();
+                    if (recognition) {
+                        try {
+                            recognition.start();
+                        } catch (err) {
+                            console.error("VoiceControl: Failed to restart:", err);
+                        }
+                    }
+                }
+            }, 300);
+        } else {
             removeHUD();
         }
     };
@@ -387,9 +412,21 @@ function parseCommand(transcript) {
     }
 }
 
-function start() {
+async function start() {
     if (!recognition) initRecognition();
     if (!recognition || isListening) return;
+
+    // Request mic permission first — this triggers Chrome's "Allow" prompt
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Stop the stream immediately — SpeechRecognition manages its own mic
+        stream.getTracks().forEach(track => track.stop());
+    } catch (err) {
+        console.error("VoiceControl: Microphone permission denied.", err);
+        setupHUD();
+        updateHUD("❌", "Mic access denied — click the 🔒 in the address bar to allow", "status-error");
+        return;
+    }
 
     try {
         recognition.start();

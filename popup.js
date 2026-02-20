@@ -29,19 +29,36 @@ document.addEventListener("DOMContentLoaded", async () => {
         const nextListeningState = !isListening;
 
         // Tell content script to start/stop
+        const action = nextListeningState ? "startListening" : "stopListening";
+
         try {
-            const action = nextListeningState ? "startListening" : "stopListening";
             await chrome.tabs.sendMessage(tab.id, { action });
-
-            // Only update our state and UI if the message was successfully received
-            isListening = nextListeningState;
-            chrome.storage.local.set({ [`listening_${tab.id}`]: isListening });
-            updateUI(isListening);
-
         } catch (err) {
-            console.error("Could not send message to tab. It might not be loaded yet.", err);
-            alert("Could not connect to the page. Please wait for the page to finish loading or refresh the tab.");
+            // Content script not injected yet — inject it now and retry
+            console.warn("Content script not found, injecting...", err);
+            try {
+                await chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    files: ["content.js"]
+                });
+                await chrome.scripting.insertCSS({
+                    target: { tabId: tab.id },
+                    files: ["styles/content.css"]
+                });
+                // Small delay to let the script initialize
+                await new Promise(r => setTimeout(r, 200));
+                await chrome.tabs.sendMessage(tab.id, { action });
+            } catch (injectErr) {
+                console.error("Failed to inject content script:", injectErr);
+                alert("Could not connect to this page. Make sure you're on a regular website (not a browser settings page).");
+                return;
+            }
         }
+
+        // Update state and UI after successful message
+        isListening = nextListeningState;
+        chrome.storage.local.set({ [`listening_${tab.id}`]: isListening });
+        updateUI(isListening);
     });
 
     function updateUI(listening) {
