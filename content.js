@@ -8,6 +8,8 @@ let isListening = false;
 let hudElement = null;
 let hudTextElement = null;
 let fadeTimeout = null;
+let linkBadges = [];       // Array of { badge: HTMLElement, link: HTMLElement }
+let linkBadgeTimeout = null;
 
 function initRecognition() {
     if (recognition) return;
@@ -119,6 +121,66 @@ function updateHUD(icon, text, statusClass) {
     }, 150); // wait for fade out to complete before changing text
 }
 
+function showLinks() {
+    hideLinks(); // clear any existing badges first
+
+    const links = document.querySelectorAll("a");
+    let count = 0;
+
+    links.forEach((link) => {
+        const rect = link.getBoundingClientRect();
+        // Skip links that are not visible in viewport
+        if (
+            rect.width === 0 || rect.height === 0 ||
+            rect.bottom < 0 || rect.top > window.innerHeight ||
+            rect.right < 0 || rect.left > window.innerWidth
+        ) {
+            return;
+        }
+
+        count++;
+        const badge = document.createElement("span");
+        badge.className = "vc-link-badge";
+        badge.textContent = count;
+        badge.style.cssText = `
+            position: absolute;
+            top: ${rect.top + window.scrollY - 8}px;
+            left: ${rect.left + window.scrollX - 8}px;
+            width: 22px;
+            height: 22px;
+            background: #2563eb;
+            color: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            font-family: Arial, sans-serif;
+            z-index: 2147483647;
+            pointer-events: none;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+            line-height: 1;
+        `;
+        document.body.appendChild(badge);
+        linkBadges.push({ badge, link });
+    });
+
+    // Auto-hide after 10 seconds
+    linkBadgeTimeout = setTimeout(() => hideLinks(), 10000);
+}
+
+function hideLinks() {
+    clearTimeout(linkBadgeTimeout);
+    linkBadgeTimeout = null;
+    linkBadges.forEach(({ badge }) => {
+        if (badge && badge.parentNode) {
+            badge.parentNode.removeChild(badge);
+        }
+    });
+    linkBadges = [];
+}
+
 function parseCommand(transcript) {
     const text = transcript.toLowerCase();
     let recognized = false;
@@ -180,6 +242,125 @@ function parseCommand(transcript) {
         recognized = true;
         updateHUD("✅", "Switching to previous tab", "status-success");
         chrome.runtime.sendMessage({ command: "previousTab" });
+    } else if (text.includes("show links")) {
+        recognized = true;
+        showLinks();
+        updateHUD("✅", linkBadges.length + " links found", "status-success");
+    } else if (text.includes("hide links")) {
+        recognized = true;
+        hideLinks();
+        updateHUD("✅", "Links hidden", "status-success");
+    } else if (text.includes("click ")) {
+        const target = text.split("click ")[1].trim();
+        if (target) {
+            recognized = true;
+
+            // If link badges are active and target is a number, click the nth link
+            const num = parseInt(target, 10);
+            if (linkBadges.length > 0 && !isNaN(num) && num >= 1 && num <= linkBadges.length) {
+                const entry = linkBadges[num - 1];
+                updateHUD("✅", "Clicking link #" + num, "status-success");
+                const origOutline = entry.link.style.outline;
+                entry.link.style.outline = "3px solid yellow";
+                setTimeout(() => {
+                    entry.link.style.outline = origOutline;
+                    entry.link.click();
+                    hideLinks();
+                }, 500);
+            } else {
+                // Fallback: fuzzy text match on interactive elements
+                const elements = document.querySelectorAll('a, button, [role="button"], input[type="submit"], input[type="button"]');
+                let matched = null;
+                for (const el of elements) {
+                    const elText = (el.innerText || "").toLowerCase();
+                    const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
+                    if (elText.includes(target) || ariaLabel.includes(target)) {
+                        matched = el;
+                        break;
+                    }
+                }
+                if (matched) {
+                    updateHUD("✅", "Clicking: " + target, "status-success");
+                    const origOutline = matched.style.outline;
+                    matched.style.outline = "3px solid yellow";
+                    setTimeout(() => {
+                        matched.style.outline = origOutline;
+                        matched.click();
+                    }, 500);
+                } else {
+                    updateHUD("❌", "Element not found: " + target, "status-error");
+                }
+            }
+        }
+    } else if (text.includes("type ")) {
+        const typed = transcript.substring(transcript.toLowerCase().indexOf("type ") + 5);
+        const el = document.activeElement;
+        if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) {
+            recognized = true;
+            if (el.isContentEditable) {
+                el.textContent += typed;
+            } else {
+                el.value = typed;
+            }
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            updateHUD("✅", "Typed: " + typed, "status-success");
+        } else {
+            recognized = true;
+            updateHUD("❌", "No input field focused", "status-error");
+        }
+    } else if (text.includes("press enter")) {
+        recognized = true;
+        const el = document.activeElement;
+        if (el) {
+            el.dispatchEvent(new KeyboardEvent("keydown", {
+                key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true
+            }));
+            el.dispatchEvent(new KeyboardEvent("keyup", {
+                key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true
+            }));
+            updateHUD("✅", "Pressed Enter", "status-success");
+        }
+    } else if (text.includes("focus ")) {
+        const labelText = text.split("focus ")[1].trim();
+        if (labelText) {
+            recognized = true;
+            const inputs = document.querySelectorAll("input, textarea, select");
+            let matched = null;
+            for (const el of inputs) {
+                const placeholder = (el.getAttribute("placeholder") || "").toLowerCase();
+                const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
+                // Check associated <label> via the "for" attribute
+                let labelContent = "";
+                if (el.id) {
+                    const labelEl = document.querySelector(`label[for="${el.id}"]`);
+                    if (labelEl) labelContent = labelEl.textContent.toLowerCase();
+                }
+                if (placeholder.includes(labelText) || ariaLabel.includes(labelText) || labelContent.includes(labelText)) {
+                    matched = el;
+                    break;
+                }
+            }
+            if (matched) {
+                matched.focus();
+                updateHUD("✅", "Focused: " + labelText, "status-success");
+            } else {
+                updateHUD("❌", "Field not found: " + labelText, "status-error");
+            }
+        }
+    } else if (text.includes("clear field")) {
+        recognized = true;
+        const el = document.activeElement;
+        if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) {
+            el.value = "";
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            updateHUD("✅", "Field cleared", "status-success");
+        } else if (el && el.isContentEditable) {
+            el.textContent = "";
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            updateHUD("✅", "Field cleared", "status-success");
+        } else {
+            updateHUD("❌", "No input field focused", "status-error");
+        }
     } else if (text.includes("open ")) {
         let site = text.split("open ")[1].trim().replace(/\s/g, "");
         if (site) {
