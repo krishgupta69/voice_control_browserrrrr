@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VoiceControl Browser</title>
+  <link rel="stylesheet" href="styles/popup.css" />
+</head>
+
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <span class="logo-icon">🎙️</span>
+      <h1 class="title">VoiceControl</h1>
+    </header>
+
+    <!-- Mic Toggle Section -->
+    <main class="main">
+      <button id="mic-toggle" class="mic-btn" aria-label="Toggle microphone">
+        <span class="mic-icon">🎤</span>
+      </button>
+      <p id="status-text" class="status-text">Mic is <strong>Off</strong></p>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span>Say a command to get started</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>
