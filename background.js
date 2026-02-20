@@ -20,3 +20,51 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
     chrome.storage.local.remove(`listening_${tabId}`);
 });
+
+// Handle tab commands from content.js
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    const senderTabId = sender.tab ? sender.tab.id : null;
+
+    switch (request.command) {
+        case "newTab":
+            chrome.tabs.create({});
+            sendResponse({ status: "ok" });
+            break;
+
+        case "closeTab":
+            if (senderTabId) {
+                chrome.tabs.remove(senderTabId);
+            }
+            sendResponse({ status: "ok" });
+            break;
+
+        case "nextTab":
+            chrome.tabs.query({ currentWindow: true }, (tabs) => {
+                if (!tabs.length || !senderTabId) return;
+                const currentIndex = tabs.findIndex(t => t.id === senderTabId);
+                const nextIndex = (currentIndex + 1) % tabs.length;
+                chrome.tabs.update(tabs[nextIndex].id, { active: true });
+            });
+            sendResponse({ status: "ok" });
+            break;
+
+        case "previousTab":
+            chrome.tabs.query({ currentWindow: true }, (tabs) => {
+                if (!tabs.length || !senderTabId) return;
+                const currentIndex = tabs.findIndex(t => t.id === senderTabId);
+                const prevIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+                chrome.tabs.update(tabs[prevIndex].id, { active: true });
+            });
+            sendResponse({ status: "ok" });
+            break;
+
+        case "openSite":
+            if (request.url) {
+                chrome.tabs.create({ url: request.url });
+            }
+            sendResponse({ status: "ok" });
+            break;
+    }
+
+    return true; // keep channel open for async responses
+});

@@ -164,6 +164,33 @@ function parseCommand(transcript) {
         recognized = true;
         updateHUD("✅", "Reloading", "status-success");
         setTimeout(() => window.location.reload(), 800);
+    } else if (text.includes("new tab")) {
+        recognized = true;
+        updateHUD("✅", "Opening new tab", "status-success");
+        chrome.runtime.sendMessage({ command: "newTab" });
+    } else if (text.includes("close tab")) {
+        recognized = true;
+        updateHUD("✅", "Closing tab", "status-success");
+        chrome.runtime.sendMessage({ command: "closeTab" });
+    } else if (text.includes("next tab")) {
+        recognized = true;
+        updateHUD("✅", "Switching to next tab", "status-success");
+        chrome.runtime.sendMessage({ command: "nextTab" });
+    } else if (text.includes("previous tab")) {
+        recognized = true;
+        updateHUD("✅", "Switching to previous tab", "status-success");
+        chrome.runtime.sendMessage({ command: "previousTab" });
+    } else if (text.includes("open ")) {
+        let site = text.split("open ")[1].trim().replace(/\s/g, "");
+        if (site) {
+            if (!site.includes(".")) {
+                site += ".com";
+            }
+            let url = site.startsWith("http") ? site : "https://" + site;
+            recognized = true;
+            updateHUD("✅", "Opening " + url, "status-success");
+            chrome.runtime.sendMessage({ command: "openSite", url: url });
+        }
     } else {
         console.log("VoiceControl: Command not recognized:", transcript);
         updateHUD("❌", "Not recognized: " + transcript, "status-error");
