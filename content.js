@@ -11,6 +11,22 @@ let fadeTimeout = null;
 let linkBadges = [];       // Array of { badge: HTMLElement, link: HTMLElement }
 let linkBadgeTimeout = null;
 
+let modeState = "command"; // "command" or "dictation"
+let wakeWord = "hey browser";
+let wakeWordState = "idle"; // "idle" or "active"
+let activeTimeout = null;
+
+chrome.storage.sync.get(['wakeWord'], (result) => {
+    wakeWord = result.wakeWord || "hey browser";
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && changes.wakeWord) {
+        wakeWord = changes.wakeWord.newValue;
+        if (isListening) refreshHUDState();
+    }
+});
+
 function initRecognition() {
     // Check for browser support
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -25,7 +41,7 @@ function initRecognition() {
         recognition.onresult = null;
         recognition.onerror = null;
         recognition.onend = null;
-        try { recognition.abort(); } catch (e) {}
+        try { recognition.abort(); } catch (e) { }
         recognition = null;
     }
 
@@ -37,17 +53,25 @@ function initRecognition() {
     recognition.onstart = () => {
         console.log("VoiceControl: Recognition session started.");
         setupHUD();
-        updateHUD("🎙️", "Listening...", "status-listening");
+        refreshHUDState();
     };
 
     recognition.onresult = (event) => {
         try {
             const lastResultIndex = event.results.length - 1;
             if (!event.results[lastResultIndex].isFinal) return;
-            const finalTranscript = event.results[lastResultIndex][0].transcript.trim();
+            const finalTranscript = event.results[lastResultIndex][0].transcript.trim().toLowerCase();
             if (!finalTranscript) return;
             console.log("VoiceControl Heard:", finalTranscript);
-            parseCommand(finalTranscript);
+
+            if (wakeWordState === "idle") {
+                if (finalTranscript.includes(wakeWord.toLowerCase())) {
+                    activateWakeWord();
+                }
+            } else {
+                resetActiveTimeout();
+                parseCommand(finalTranscript);
+            }
         } catch (err) {
             console.error("VoiceControl: Error processing speech result:", err);
             updateHUD("❌", "Error processing command", "status-error");
@@ -206,84 +230,280 @@ function hideLinks() {
     linkBadges = [];
 }
 
+function refreshHUDState() {
+    if (!isListening) return;
+    if (wakeWordState === "idle") {
+        updateHUD("💤", `Waiting for '${wakeWord}'...`, "status-listening");
+    } else {
+        const icon = modeState === "dictation" ? "⌨️" : "🎙️";
+        const text = modeState === "dictation" ? "Dictating..." : "Commanding...";
+        updateHUD(icon, text, "status-listening");
+    }
+}
+
+function activateWakeWord() {
+    wakeWordState = "active";
+    speak("Yes?");
+    refreshHUDState();
+    resetActiveTimeout();
+}
+
+function idleWakeWord() {
+    wakeWordState = "idle";
+    modeState = "command";
+    speak("Going to sleep");
+    refreshHUDState();
+}
+
+function resetActiveTimeout() {
+    clearTimeout(activeTimeout);
+    activeTimeout = setTimeout(() => {
+        idleWakeWord();
+    }, 10000);
+}
+
+function stringSimilarity(s1, s2) {
+    let longer = s1;
+    let shorter = s2;
+    if (s1.length < s2.length) {
+        longer = s2;
+        shorter = s1;
+    }
+    let longerLength = longer.length;
+    if (longerLength === 0) {
+        return 1.0;
+    }
+    return (longerLength - levenshteinDistance(longer, shorter)) / parseFloat(longerLength);
+}
+
+function levenshteinDistance(a, b) {
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1,
+                    matrix[i][j - 1] + 1,
+                    matrix[i - 1][j] + 1
+                );
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+const commandMap = [
+    { keywords: ["go to", "navigate to"], action: "goTo", hasParam: true },
+    { keywords: ["scroll down", "move down", "go down"], action: "scrollDown" },
+    { keywords: ["scroll up", "move up", "go up"], action: "scrollUp" },
+    { keywords: ["scroll to top", "go to top", "top of page"], action: "scrollToTop" },
+    { keywords: ["scroll to bottom", "go to bottom", "bottom of page"], action: "scrollToBottom" },
+    { keywords: ["go back", "previous page", "back"], action: "goBack" },
+    { keywords: ["go forward", "next page", "forward"], action: "goForward" },
+    { keywords: ["reload", "refresh", "reload page"], action: "reload" },
+    { keywords: ["new tab", "open tab"], action: "newTab" },
+    { keywords: ["close tab", "close this tab"], action: "closeTab" },
+    { keywords: ["next tab", "go to next tab"], action: "nextTab" },
+    { keywords: ["previous tab", "go to previous tab"], action: "previousTab" },
+    { keywords: ["show links", "show all links", "display links"], action: "showLinks" },
+    { keywords: ["hide links", "hide all links", "remove links"], action: "hideLinks" },
+    { keywords: ["click", "tap", "press button"], action: "click", hasParam: true },
+    { keywords: ["type", "write", "enter text"], action: "type", hasParam: true },
+    { keywords: ["press enter", "hit enter", "enter"], action: "pressEnter" },
+    { keywords: ["focus", "select field"], action: "focus", hasParam: true },
+    { keywords: ["clear field", "clear text", "clear input"], action: "clearField" },
+    { keywords: ["open", "launch"], action: "open", hasParam: true }
+];
+
+function speak(text) {
+    chrome.runtime.sendMessage({ command: "speak", text });
+}
+
+function handleDictation(transcript) {
+    if (stringSimilarity(transcript.toLowerCase().trim(), "stop typing") > 0.8 ||
+        stringSimilarity(transcript.toLowerCase().trim(), "command mode") > 0.8) {
+        modeState = "command";
+        updateHUD("🎙️", "Commanding...", "status-listening");
+        return;
+    }
+
+    const el = document.activeElement;
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) {
+        if (el.isContentEditable) {
+            el.textContent += transcript + " ";
+        } else {
+            el.value += transcript + " ";
+        }
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        updateHUD("⌨️", "Dictated: " + transcript, "status-success");
+    } else {
+        updateHUD("❌", "No input focused for dictation", "status-error");
+    }
+}
+
 function parseCommand(transcript) {
-    const text = transcript.toLowerCase();
-    let recognized = false;
+    if (modeState === "dictation") {
+        handleDictation(transcript);
 
-    if (text.includes("go to ")) {
-        let urlPart = text.split("go to ")[1].trim().replace(/\s/g, "");
-        if (!urlPart.includes(".")) {
-            // If they just say "go to google", append .com
-            urlPart += ".com";
+        if (isListening) {
+            setTimeout(() => {
+                if (isListening && modeState === "dictation" && wakeWordState === "active") {
+                    refreshHUDState();
+                }
+            }, 3000);
         }
-        let url = urlPart;
-        if (!url.startsWith("http")) {
-            url = "https://" + url;
-        }
-        recognized = true;
-        updateHUD("✅", "Navigating to " + url, "status-success");
-        setTimeout(() => window.location.href = url, 800);
-    } else if (text.includes("scroll down")) {
-        recognized = true;
-        updateHUD("✅", "Scrolled down", "status-success");
-        window.scrollBy({ top: 400, behavior: 'smooth' });
-    } else if (text.includes("scroll up")) {
-        recognized = true;
-        updateHUD("✅", "Scrolled up", "status-success");
-        window.scrollBy({ top: -400, behavior: 'smooth' });
-    } else if (text.includes("scroll to top")) {
-        recognized = true;
-        updateHUD("✅", "Scrolled to top", "status-success");
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else if (text.includes("scroll to bottom")) {
-        recognized = true;
-        updateHUD("✅", "Scrolled to bottom", "status-success");
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-    } else if (text.includes("go back")) {
-        recognized = true;
-        updateHUD("✅", "Going back", "status-success");
-        setTimeout(() => window.history.back(), 800);
-    } else if (text.includes("go forward")) {
-        recognized = true;
-        updateHUD("✅", "Going forward", "status-success");
-        setTimeout(() => window.history.forward(), 800);
-    } else if (text.includes("reload")) {
-        recognized = true;
-        updateHUD("✅", "Reloading", "status-success");
-        setTimeout(() => window.location.reload(), 800);
-    } else if (text.includes("new tab")) {
-        recognized = true;
-        updateHUD("✅", "Opening new tab", "status-success");
-        chrome.runtime.sendMessage({ command: "newTab" });
-    } else if (text.includes("close tab")) {
-        recognized = true;
-        updateHUD("✅", "Closing tab", "status-success");
-        chrome.runtime.sendMessage({ command: "closeTab" });
-    } else if (text.includes("next tab")) {
-        recognized = true;
-        updateHUD("✅", "Switching to next tab", "status-success");
-        chrome.runtime.sendMessage({ command: "nextTab" });
-    } else if (text.includes("previous tab")) {
-        recognized = true;
-        updateHUD("✅", "Switching to previous tab", "status-success");
-        chrome.runtime.sendMessage({ command: "previousTab" });
-    } else if (text.includes("show links")) {
-        recognized = true;
-        showLinks();
-        updateHUD("✅", linkBadges.length + " links found", "status-success");
-    } else if (text.includes("hide links")) {
-        recognized = true;
-        hideLinks();
-        updateHUD("✅", "Links hidden", "status-success");
-    } else if (text.includes("click ")) {
-        const target = text.split("click ")[1].trim();
-        if (target) {
-            recognized = true;
+        return;
+    }
 
-            // If link badges are active and target is a number, click the nth link
+    const text = transcript.toLowerCase().trim();
+
+    let bestScore = 0;
+    let bestAction = null;
+    let bestKeyword = null;
+    let matchedParam = "";
+
+    for (const cmd of commandMap) {
+        for (const kw of cmd.keywords) {
+            let score = 0;
+            let param = "";
+
+            if (cmd.hasParam) {
+                const kwWords = kw.split(" ").length;
+                const trWords = text.split(" ");
+
+                if (trWords.length >= kwWords) {
+                    const trCmdPart = trWords.slice(0, kwWords).join(" ");
+                    param = trWords.slice(kwWords).join(" ");
+                    score = stringSimilarity(trCmdPart, kw);
+                } else {
+                    score = stringSimilarity(text, kw);
+                }
+            } else {
+                score = stringSimilarity(text, kw);
+            }
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestAction = cmd.action;
+                bestKeyword = kw;
+                matchedParam = param;
+            }
+        }
+    }
+
+    if (bestScore > 0.6) {
+        executeCommand(bestAction, matchedParam, transcript);
+    } else if (bestKeyword) {
+        speak("Did you mean " + bestKeyword);
+        updateHUD("❓", `Did you mean: ${bestKeyword}?`, "status-error");
+    } else {
+        console.log("VoiceControl: Command not recognized:", transcript);
+        speak("Command not recognized");
+        updateHUD("❌", "Not recognized: " + transcript, "status-error");
+    }
+
+    // Reset to listening state after a few seconds if everything keeps going
+    if (isListening && wakeWordState === "active") {
+        setTimeout(() => {
+            if (isListening && modeState === "command" && wakeWordState === "active") {
+                refreshHUDState();
+            }
+        }, 3000);
+    }
+}
+
+function executeCommand(action, param, transcript) {
+    switch (action) {
+        case "goTo": {
+            let urlPart = param.replace(/\s/g, "");
+            if (!urlPart.includes(".")) urlPart += ".com";
+            let url = urlPart.startsWith("http") ? urlPart : "https://" + urlPart;
+            speak("Navigating to " + urlPart);
+            updateHUD("✅", "Navigating to " + url, "status-success");
+            setTimeout(() => window.location.href = url, 800);
+            break;
+        }
+        case "scrollDown":
+            speak("Scrolling down");
+            updateHUD("✅", "Scrolled down", "status-success");
+            window.scrollBy({ top: 400, behavior: 'smooth' });
+            break;
+        case "scrollUp":
+            speak("Scrolling up");
+            updateHUD("✅", "Scrolled up", "status-success");
+            window.scrollBy({ top: -400, behavior: 'smooth' });
+            break;
+        case "scrollToTop":
+            speak("Scrolling to top");
+            updateHUD("✅", "Scrolled to top", "status-success");
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            break;
+        case "scrollToBottom":
+            speak("Scrolling to bottom");
+            updateHUD("✅", "Scrolled to bottom", "status-success");
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+            break;
+        case "goBack":
+            speak("Going back");
+            updateHUD("✅", "Going back", "status-success");
+            setTimeout(() => window.history.back(), 800);
+            break;
+        case "goForward":
+            speak("Going forward");
+            updateHUD("✅", "Going forward", "status-success");
+            setTimeout(() => window.history.forward(), 800);
+            break;
+        case "reload":
+            speak("Reloading page");
+            updateHUD("✅", "Reloading", "status-success");
+            setTimeout(() => window.location.reload(), 800);
+            break;
+        case "newTab":
+            speak("Opening new tab");
+            updateHUD("✅", "Opening new tab", "status-success");
+            chrome.runtime.sendMessage({ command: "newTab" });
+            break;
+        case "closeTab":
+            speak("Closing tab");
+            updateHUD("✅", "Closing tab", "status-success");
+            chrome.runtime.sendMessage({ command: "closeTab" });
+            break;
+        case "nextTab":
+            speak("Switching to next tab");
+            updateHUD("✅", "Switching to next tab", "status-success");
+            chrome.runtime.sendMessage({ command: "nextTab" });
+            break;
+        case "previousTab":
+            speak("Switching to previous tab");
+            updateHUD("✅", "Switching to previous tab", "status-success");
+            chrome.runtime.sendMessage({ command: "previousTab" });
+            break;
+        case "showLinks":
+            showLinks();
+            speak(linkBadges.length + " links found");
+            updateHUD("✅", linkBadges.length + " links found", "status-success");
+            break;
+        case "hideLinks":
+            hideLinks();
+            speak("Links hidden");
+            updateHUD("✅", "Links hidden", "status-success");
+            break;
+        case "click": {
+            let target = param;
+            if (!target) {
+                speak("Click what?");
+                updateHUD("❌", "Click what?", "status-error");
+                break;
+            }
             const num = parseInt(target, 10);
             if (linkBadges.length > 0 && !isNaN(num) && num >= 1 && num <= linkBadges.length) {
                 const entry = linkBadges[num - 1];
+                speak("Clicking link " + num);
                 updateHUD("✅", "Clicking link #" + num, "status-success");
                 const origOutline = entry.link.style.outline;
                 entry.link.style.outline = "3px solid yellow";
@@ -293,7 +513,6 @@ function parseCommand(transcript) {
                     hideLinks();
                 }, 500);
             } else {
-                // Fallback: fuzzy text match on interactive elements
                 const elements = document.querySelectorAll('a, button, [role="button"], input[type="submit"], input[type="button"]');
                 let matched = null;
                 for (const el of elements) {
@@ -301,10 +520,12 @@ function parseCommand(transcript) {
                     const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
                     if (elText.includes(target) || ariaLabel.includes(target)) {
                         matched = el;
+                        target = elText || ariaLabel || target; // get better name for speaking
                         break;
                     }
                 }
                 if (matched) {
+                    speak("Clicking " + target);
                     updateHUD("✅", "Clicking: " + target, "status-success");
                     const origOutline = matched.style.outline;
                     matched.style.outline = "3px solid yellow";
@@ -313,48 +534,56 @@ function parseCommand(transcript) {
                         matched.click();
                     }, 500);
                 } else {
+                    speak("No element found");
                     updateHUD("❌", "Element not found: " + target, "status-error");
                 }
             }
+            break;
         }
-    } else if (text.includes("type ")) {
-        const typed = transcript.substring(transcript.toLowerCase().indexOf("type ") + 5);
-        const el = document.activeElement;
-        if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) {
-            recognized = true;
-            if (el.isContentEditable) {
-                el.textContent += typed;
+        case "type": {
+            const typed = param;
+            const el = document.activeElement;
+            if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) {
+                if (el.isContentEditable) {
+                    el.textContent += typed;
+                } else {
+                    el.value = typed;
+                }
+                speak("Typed " + typed);
+                el.dispatchEvent(new Event("input", { bubbles: true }));
+                updateHUD("✅", "Typed: " + typed, "status-success");
             } else {
-                el.value = typed;
+                speak("No input field focused");
+                updateHUD("❌", "No input field focused", "status-error");
             }
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-            updateHUD("✅", "Typed: " + typed, "status-success");
-        } else {
-            recognized = true;
-            updateHUD("❌", "No input field focused", "status-error");
+            break;
         }
-    } else if (text.includes("press enter")) {
-        recognized = true;
-        const el = document.activeElement;
-        if (el) {
-            el.dispatchEvent(new KeyboardEvent("keydown", {
-                key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true
-            }));
-            el.dispatchEvent(new KeyboardEvent("keyup", {
-                key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true
-            }));
-            updateHUD("✅", "Pressed Enter", "status-success");
+        case "pressEnter": {
+            const el = document.activeElement;
+            if (el) {
+                el.dispatchEvent(new KeyboardEvent("keydown", {
+                    key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true
+                }));
+                el.dispatchEvent(new KeyboardEvent("keyup", {
+                    key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true
+                }));
+                speak("Pressed enter");
+                updateHUD("✅", "Pressed Enter", "status-success");
+            }
+            break;
         }
-    } else if (text.includes("focus ")) {
-        const labelText = text.split("focus ")[1].trim();
-        if (labelText) {
-            recognized = true;
+        case "focus": {
+            let labelText = param;
+            if (!labelText) {
+                speak("Focus what?");
+                updateHUD("❌", "Focus what?", "status-error");
+                break;
+            }
             const inputs = document.querySelectorAll("input, textarea, select");
             let matched = null;
             for (const el of inputs) {
                 const placeholder = (el.getAttribute("placeholder") || "").toLowerCase();
                 const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
-                // Check associated <label> via the "for" attribute
                 let labelContent = "";
                 if (el.id) {
                     const labelEl = document.querySelector(`label[for="${el.id}"]`);
@@ -362,53 +591,62 @@ function parseCommand(transcript) {
                 }
                 if (placeholder.includes(labelText) || ariaLabel.includes(labelText) || labelContent.includes(labelText)) {
                     matched = el;
+                    labelText = placeholder || ariaLabel || labelContent || labelText;
                     break;
                 }
             }
             if (matched) {
                 matched.focus();
+                speak("Focused " + labelText);
                 updateHUD("✅", "Focused: " + labelText, "status-success");
             } else {
+                speak("Field not found");
                 updateHUD("❌", "Field not found: " + labelText, "status-error");
             }
+            break;
         }
-    } else if (text.includes("clear field")) {
-        recognized = true;
-        const el = document.activeElement;
-        if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) {
-            el.value = "";
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-            updateHUD("✅", "Field cleared", "status-success");
-        } else if (el && el.isContentEditable) {
-            el.textContent = "";
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-            updateHUD("✅", "Field cleared", "status-success");
-        } else {
-            updateHUD("❌", "No input field focused", "status-error");
-        }
-    } else if (text.includes("open ")) {
-        let site = text.split("open ")[1].trim().replace(/\s/g, "");
-        if (site) {
-            if (!site.includes(".")) {
-                site += ".com";
+        case "clearField": {
+            const el = document.activeElement;
+            if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) {
+                el.value = "";
+                speak("Field cleared");
+                el.dispatchEvent(new Event("input", { bubbles: true }));
+                updateHUD("✅", "Field cleared", "status-success");
+            } else if (el && el.isContentEditable) {
+                el.textContent = "";
+                speak("Field cleared");
+                el.dispatchEvent(new Event("input", { bubbles: true }));
+                updateHUD("✅", "Field cleared", "status-success");
+            } else {
+                speak("No input field focused");
+                updateHUD("❌", "No input field focused", "status-error");
             }
-            let url = site.startsWith("http") ? site : "https://" + site;
-            recognized = true;
-            updateHUD("✅", "Opening " + url, "status-success");
-            chrome.runtime.sendMessage({ command: "openSite", url: url });
+            break;
         }
-    } else {
-        console.log("VoiceControl: Command not recognized:", transcript);
-        updateHUD("❌", "Not recognized: " + transcript, "status-error");
-    }
-
-    // Reset to listening state after a few seconds if everything keeps going
-    if (isListening) {
-        setTimeout(() => {
-            if (isListening) {
-                updateHUD("🎙️", "Listening...", "status-listening");
+        case "open": {
+            let site = param.replace(/\s/g, "");
+            if (site) {
+                if (!site.includes(".")) site += ".com";
+                let url = site.startsWith("http") ? site : "https://" + site;
+                speak("Opening " + site);
+                updateHUD("✅", "Opening " + url, "status-success");
+                chrome.runtime.sendMessage({ command: "openSite", url: url });
+            } else {
+                speak("Open what?");
+                updateHUD("❌", "Open what?", "status-error");
             }
-        }, 3000);
+            break;
+        }
+        case "startTyping":
+            modeState = "dictation";
+            speak("Dictation mode");
+            updateHUD("⌨️", "Dictating...", "status-success");
+            break;
+        case "stopTyping":
+            modeState = "command";
+            speak("Command mode");
+            updateHUD("🎙️", "Commanding...", "status-success");
+            break;
     }
 }
 
@@ -441,6 +679,8 @@ function stop() {
     if (!recognition || !isListening) return;
 
     try {
+        clearTimeout(activeTimeout);
+        wakeWordState = "idle";
         recognition.stop();
         isListening = false;
         console.log("VoiceControl: Listening stopped.");

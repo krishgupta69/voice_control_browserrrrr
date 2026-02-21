@@ -22,6 +22,22 @@
         <span class="mic-icon">🎤</span>
       </button>
       <p id="status-text" class="status-text">Mic is <strong>Off</strong></p>
+
+      <!-- TTS Toggle Section -->
+      <div class="tts-container">
+        <label for="tts-toggle" class="tts-label">Voice Feedback</label>
+        <label class="switch">
+          <input type="checkbox" id="tts-toggle" checked>
+          <span class="slider round"></span>
+        </label>
+      </div>
+
+      <!-- Wake Word Section -->
+      <div class="tts-container" style="margin-top: 15px;">
+        <label for="wake-word-input" class="tts-label">Wake Word</label>
+        <input type="text" id="wake-word-input" placeholder="hey browser"
+          style="width: 100px; padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
+      </div>
     </main>
 
     <!-- Footer -->

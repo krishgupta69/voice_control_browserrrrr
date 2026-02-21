@@ -64,6 +64,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
             sendResponse({ status: "ok" });
             break;
+
+        case "speak":
+            chrome.storage.local.get(['ttsEnabled'], (result) => {
+                if (result.ttsEnabled !== false) {
+                    chrome.tts.speak(request.text, { rate: 1.2, pitch: 1.0, volume: 0.8 });
+                }
+            });
+            sendResponse({ status: "ok" });
+            break;
     }
 
     return true; // keep channel open for async responses
