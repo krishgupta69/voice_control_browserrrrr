@@ -55,7 +55,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             await chrome.tabs.sendMessage(tab.id, { action });
         } catch (err) {
             // Content script not injected yet — inject it now and retry
-            console.warn("Content script not found, injecting...", err);
+            console.debug("VoiceControl: Injecting content script into tab...");
             try {
                 await chrome.scripting.executeScript({
                     target: { tabId: tab.id },
