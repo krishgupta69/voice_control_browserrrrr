@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceControl Settings</title>
+    <link rel="stylesheet" href="styles/options.css">
+</head>
+
+<body>
+    <div class="container">
+        <header class="header">
+            <span class="logo-icon">🎙️</span>
+            <h1 class="title">VoiceControl Settings</h1>
+        </header>
+
+        <main class="main-content">
+            <section class="settings-group">
+                <h2>General settings</h2>
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <label for="wakeWord">Wake Word</label>
+                        <span class="setting-desc">The phrase used to activate a command.</span>
+                    </div>
+                    <input type="text" id="wakeWord" class="form-control" placeholder="e.g. hey browser">
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <label for="language">Recognition Language</label>
+                        <span class="setting-desc">Language used for voice recognition.</span>
+                    </div>
+                    <select id="language" class="form-control">
+                        <option value="en-US">English (US)</option>
+                        <option value="hi-IN">Hindi (India)</option>
+                        <option value="es-ES">Spanish (Spain)</option>
+                        <option value="fr-FR">French (France)</option>
+                    </select>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <label for="ttsEnabled">Voice Feedback (TTS)</label>
+                        <span class="setting-desc">Speak back confirmations and errors.</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="ttsEnabled">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <label for="scrollAmount">Scroll Amount (px)</label>
+                        <span class="setting-desc">How far to scroll per command.</span>
+                    </div>
+                    <div class="range-container">
+                        <input type="range" id="scrollAmount" min="100" max="800" step="50" class="form-range">
+                        <span id="scrollAmountVal" class="range-val">400</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="settings-group">
+                <h2>HUD Interface</h2>
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <label for="hudPosition">HUD Position</label>
+                        <span class="setting-desc">Where the status indicator appears.</span>
+                    </div>
+                    <select id="hudPosition" class="form-control">
+                        <option value="bottom-right">Bottom Right</option>
+                        <option value="bottom-left">Bottom Left</option>
+                        <option value="top-right">Top Right</option>
+                        <option value="top-left">Top Left</option>
+                    </select>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <label for="hudOpacity">HUD Opacity</label>
+                        <span class="setting-desc">Transparency of the status indicator.</span>
+                    </div>
+                    <div class="range-container">
+                        <input type="range" id="hudOpacity" min="0.1" max="1.0" step="0.1" class="form-range">
+                        <span id="hudOpacityVal" class="range-val">0.8</span>
+                    </div>
+                </div>
+            </section>
+
+            <div id="save-status" class="save-status">Settings saved!</div>
+        </main>
+    </div>
+
+    <script src="options.js"></script>
+</body>
+
+</html>

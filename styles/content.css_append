@@ -1,0 +1,96 @@
+
+/* ===== Commands Full-Page Overlay ===== */
+#vc-commands-overlay {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 500px;
+    background: rgba(20, 20, 20, 0.96);
+    backdrop-filter: blur(12px);
+    z-index: 2147483647;
+    color: #ffffff;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.5);
+    overflow-y: auto;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#vc-commands-overlay.visible {
+    transform: translateX(0);
+}
+
+.vc-overlay-content {
+    padding: 40px 32px;
+    position: relative;
+}
+
+#vc-close-overlay {
+    position: absolute;
+    top: 24px;
+    right: 24px;
+    background: transparent;
+    border: none;
+    color: #a0a0a0;
+    font-size: 24px;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+#vc-close-overlay:hover {
+    color: #ffffff;
+}
+
+#vc-commands-overlay h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 12px 0;
+    color: #ffffff;
+}
+
+#vc-commands-overlay p {
+    font-size: 18px;
+    color: #a0a0a0;
+    margin: 0 0 32px 0;
+    line-height: 1.5;
+}
+
+.vc-command-category {
+    margin-bottom: 32px;
+}
+
+.vc-command-category h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #3b82f6;
+    margin: 0 0 16px 0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 8px;
+}
+
+.vc-command-category ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.vc-command-category li {
+    font-size: 18px;
+    color: #e0e0e0;
+    margin-bottom: 12px;
+    line-height: 1.5;
+}
+
+.vc-command-category li span {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-weight: 600;
+}

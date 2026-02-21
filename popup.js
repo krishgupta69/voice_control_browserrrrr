@@ -6,37 +6,23 @@
 document.addEventListener("DOMContentLoaded", async () => {
     const micToggleBtn = document.getElementById("mic-toggle");
     const statusText = document.getElementById("status-text");
-    const ttsToggle = document.getElementById("tts-toggle");
-    const wakeWordInput = document.getElementById("wake-word-input");
+    const settingsBtn = document.getElementById("settings-btn");
 
     // Retrieve the state for the current tab
     let isListening = false;
-    let ttsEnabled = true;
 
-    // Load custom wake word from sync storage
-    chrome.storage.sync.get(['wakeWord'], (result) => {
-        wakeWordInput.value = result.wakeWord || "hey browser";
-    });
-
-    wakeWordInput.addEventListener("change", (e) => {
-        const val = e.target.value.trim().toLowerCase() || "hey browser";
-        chrome.storage.sync.set({ wakeWord: val });
-        e.target.value = val;
+    // Open settings page on click
+    settingsBtn.addEventListener("click", () => {
+        chrome.runtime.openOptionsPage();
     });
 
     // First, find the active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     // Check global/tab state to set initial UI
-    chrome.storage.local.get([`listening_${tab.id}`, 'ttsEnabled'], (result) => {
+    chrome.storage.local.get([`listening_${tab.id}`], (result) => {
         isListening = result[`listening_${tab.id}`] || false;
-        ttsEnabled = result['ttsEnabled'] !== false; // default true
-        ttsToggle.checked = ttsEnabled;
         updateUI(isListening);
-    });
-
-    ttsToggle.addEventListener("change", (e) => {
-        chrome.storage.local.set({ ttsEnabled: e.target.checked });
     });
 
     micToggleBtn.addEventListener("click", async () => {

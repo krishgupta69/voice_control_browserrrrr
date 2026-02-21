@@ -13,7 +13,8 @@
     font-size: 14px;
     font-weight: 500;
     color: #fff;
-    background: rgba(30, 30, 30, 0.88);
+    --vc-hud-opacity: 0.88;
+    background: rgba(30, 30, 30, var(--vc-hud-opacity));
     backdrop-filter: blur(8px);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
     opacity: 0;

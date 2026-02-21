@@ -66,7 +66,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             break;
 
         case "speak":
-            chrome.storage.local.get(['ttsEnabled'], (result) => {
+            chrome.storage.sync.get(['ttsEnabled'], (result) => {
+                // Since default is true, check strictly for explicit false
                 if (result.ttsEnabled !== false) {
                     chrome.tts.speak(request.text, { rate: 1.2, pitch: 1.0, volume: 0.8 });
                 }

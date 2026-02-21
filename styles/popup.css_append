@@ -1,0 +1,19 @@
+/* Settings button */
+.settings-btn {
+    margin-top: 15px;
+    padding: 8px 16px;
+    background: #1a2744;
+    border: 1px solid #3b3b5c;
+    color: #e0e0e0;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.settings-btn:hover {
+    background: #253861;
+    border-color: #3b82f6;
+    color: #fff;
+}
