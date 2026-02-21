@@ -151,6 +151,12 @@ function initRecognition() {
     };
 
     recognition.onerror = (event) => {
+        if (event.error === 'aborted' || event.error === 'audio-capture') {
+            // These are normal during restarts or brief mic pauses, simply ignore
+            console.debug("VoiceControl: Ignored non-fatal error:", event.error);
+            return;
+        }
+
         if (event.error === 'no-speech') {
             console.warn("VoiceControl Error: No speech detected.");
             updateHUD("🎙️", "Listening...", "status-listening");
@@ -160,6 +166,7 @@ function initRecognition() {
         } else if (event.error === 'not-allowed') {
             console.warn("VoiceControl Error: Microphone access not allowed.");
             updateHUD("❌", "Mic access denied", "status-error");
+            isListening = false;
         } else {
             console.warn("VoiceControl Error:", event.error);
             updateHUD("❌", "Error: " + event.error, "status-error");
@@ -167,16 +174,61 @@ function initRecognition() {
     };
 
     recognition.onend = () => {
-        // If we're supposed to be listening and it ends (e.g., due to silence), optionally restart.
-        // For now, we'll just update state.
+        console.log("VoiceControl: Recognition ended.");
         if (isListening) {
-            // In a robust implementation, we might try to recognition.start() again here
-            // to keep it truly continuous despite browser timeouts.
-            console.log("VoiceControl: Recognition ended.");
-            isListening = false;
+            // Auto-restart — Chrome kills recognition after silence/timeouts
+            setTimeout(() => {
+                if (isListening) {
+                    try {
+                        console.log("VoiceControl: Auto-restarting recognition...");
+                        initRecognition();
+                        if (recognition) recognition.start();
+                    } catch (err) {
+                        console.error("VoiceControl: Failed to restart:", err);
+                    }
+                }
+            }, 300);
+        } else {
             removeHUD();
         }
     };
+}
+
+async function start() {
+    if (!recognition) initRecognition();
+    if (!recognition || isListening) return;
+
+    // Request mic permission first — this triggers Chrome's "Allow" prompt
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+    } catch (err) {
+        console.error("VoiceControl: Microphone permission denied.", err);
+        setupHUD();
+        updateHUD("❌", "Mic access denied", "status-error");
+        return;
+    }
+
+    try {
+        recognition.start();
+        isListening = true;
+        console.log("VoiceControl: Listening started.");
+    } catch (err) {
+        console.error("VoiceControl: Error starting recognition", err);
+    }
+}
+
+function stop() {
+    if (!recognition || !isListening) return;
+
+    try {
+        isListening = false;
+        recognition.stop();
+        console.log("VoiceControl: Listening stopped.");
+        removeHUD();
+    } catch (err) {
+        console.error("VoiceControl: Error stopping recognition", err);
+    }
 }
 
 function setupHUD() {
@@ -458,31 +510,6 @@ function parseCommand(transcript) {
     }
 }
 
-function start() {
-    if (!recognition) initRecognition();
-    if (!recognition || isListening) return;
-
-    try {
-        recognition.start();
-        isListening = true;
-        console.log("VoiceControl: Listening started.");
-    } catch (err) {
-        console.error("VoiceControl: Error starting recognition", err);
-    }
-}
-
-function stop() {
-    if (!recognition || !isListening) return;
-
-    try {
-        recognition.stop();
-        isListening = false;
-        console.log("VoiceControl: Listening stopped.");
-        removeHUD();
-    } catch (err) {
-        console.error("VoiceControl: Error stopping recognition", err);
-    }
-}
 
 // Ensure the functions can be triggered via messages from popup/background
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
